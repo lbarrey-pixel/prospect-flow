@@ -1,0 +1,197 @@
+{
+  "name": "Prospect Flow · 01 · Relógio e avisos",
+  "nodes": [
+    {
+      "id": "3bfdeb72-e9f6-586c-8f46-032a61b7ece9",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "content": "## Relógio do Prospect Flow\nO n8n só dá o compasso: o `tick` reabre tarefas adiadas, dispara acompanhamentos vencidos, revalida envios agendados e tenta de novo os webhooks do bot. Depois, avisa o operador do que é urgente (relatos, campainhas, lead qualificado).",
+        "width": 420,
+        "height": 200
+      }
+    },
+    {
+      "id": "41fb3c7e-7814-5caa-b8b2-a31ae3985009",
+      "name": "A cada 5 min (7h–20h, seg–sex)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 7-20 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4b3ae6b4-758e-5e1b-808c-082835fbc29e",
+      "name": "Tick (adiadas, acompanhamentos, agendados, webhooks)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "eaf94760-5548-5010-9580-e8ba21f90a2d",
+      "name": "Buscar avisos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/avisos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "d2cb9e6c-f8d1-57f8-8ff8-425ddcd8487e",
+      "name": "Um item por aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nreturn (r.avisos || []).map(a => ({ json: { ...a, painel: r.painel } }));"
+      }
+    },
+    {
+      "id": "31b67036-3aae-5743-aec9-309d697c24da",
+      "name": "Avisar o operador por e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.CRM_AVISOS_REMETENTE }}",
+        "toEmail": "={{ $json.caixa || $json.operador }}",
+        "subject": "={{ ($json.urgente ? '[URGENTE] ' : '') + '[Prospect Flow] ' + $json.titulo }}",
+        "emailFormat": "text",
+        "text": "={{ ($json.corpo || '') + '\\n\\nTipo: ' + $json.tipo + '\\nAbrir o painel: ' + ($json.painel || '') }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "cred-smtp-avisos",
+          "name": "SMTP avisos"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 5 min (7h–20h, seg–sex)": {
+      "main": [
+        [
+          {
+            "node": "Tick (adiadas, acompanhamentos, agendados, webhooks)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tick (adiadas, acompanhamentos, agendados, webhooks)": {
+      "main": [
+        [
+          {
+            "node": "Buscar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar avisos": {
+      "main": [
+        [
+          {
+            "node": "Um item por aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um item por aviso": {
+      "main": [
+        [
+          {
+            "node": "Avisar o operador por e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "descricao": ""
+  },
+  "tags": [
+    {
+      "name": "prospect-flow"
+    }
+  ]
+}

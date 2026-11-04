@@ -1,0 +1,70 @@
+{
+  "name": "Prospect Flow · 99 · Erros",
+  "nodes": [
+    {
+      "id": "7bba464f-7776-5425-b88a-9ad4eb943340",
+      "name": "Erro em qualquer workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "d0d7111c-7996-5002-8c08-11a29fdf4353",
+      "name": "Avisar o administrador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.CRM_AVISOS_REMETENTE }}",
+        "toEmail": "={{ $env.CRM_AVISOS_ADMIN }}",
+        "subject": "=[Prospect Flow] Falha no workflow {{ $json.workflow.name }}",
+        "emailFormat": "text",
+        "text": "={{ 'Nó: ' + ($json.execution.lastNodeExecuted || '?') + '\\nErro: ' + ($json.execution.error?.message || '?') + '\\nExecução: ' + ($json.execution.url || '') }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "cred-smtp-avisos",
+          "name": "SMTP avisos"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Erro em qualquer workflow": {
+      "main": [
+        [
+          {
+            "node": "Avisar o administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "descricao": ""
+  },
+  "tags": [
+    {
+      "name": "prospect-flow"
+    }
+  ]
+}

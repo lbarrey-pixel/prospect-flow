@@ -1,0 +1,78 @@
+# Stack local: Postgres 16 (schema + seed), API e n8n.
+#   cp .env.example .env && docker compose up --build
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: prospect
+      CRM_API_DB_PASSWORD: ${CRM_API_DB_PASSWORD:-crm_api_local}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/migrations:ro
+      - ./db/seed.sql:/seed/seed.sql:ro
+      - ./db/docker/10_papel_api.sh:/docker-entrypoint-initdb.d/10_papel_api.sh:ro
+      - ./db/docker/20_banco_n8n.sh:/docker-entrypoint-initdb.d/20_banco_n8n.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d prospect"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://crm_api:${CRM_API_DB_PASSWORD:-crm_api_local}@postgres:5432/prospect
+      AUTH_DEV: ${AUTH_DEV:-1}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      CORS_ORIGENS: ${CORS_ORIGENS:-http://localhost:5173}
+      PAINEL_URL: ${PAINEL_URL:-http://localhost:5173}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/saude')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:1.64.3
+    environment:
+      TZ: America/Sao_Paulo
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-troque-esta-chave-local}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path
+      NODE_FUNCTION_ALLOW_EXTERNAL: nodemailer
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: postgres
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PF_API_URL: http://api:8000
+      CRM_SMTP: ${CRM_SMTP:-}
+      CRM_CAIXA_ATUAL: ${CRM_CAIXA_ATUAL:-ana@example.com}
+      CRM_AVISOS_REMETENTE: ${CRM_AVISOS_REMETENTE:-avisos@example.com}
+      CRM_AVISOS_ADMIN: ${CRM_AVISOS_ADMIN:-ana@example.com}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+      - ./templates:/templates:ro
+    ports:
+      - "5678:5678"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  n8n_data:

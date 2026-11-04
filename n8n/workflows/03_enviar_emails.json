@@ -1,0 +1,252 @@
+{
+  "name": "Prospect Flow · 03 · Enviar e-mails aprovados",
+  "nodes": [
+    {
+      "id": "7d779812-1ebe-5ca1-8af2-f2bef202f284",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "content": "## Envio de e-mail\nSó sai o que a API aprovou (teto, intervalo, rodada, janela). Depois do SMTP, o resultado volta para a API, que grava a ação com a rodada. Se o registro falhar, o envio fica `enviando` e aparece no painel: nunca sai e-mail sem rastro.",
+        "width": 460,
+        "height": 200
+      }
+    },
+    {
+      "id": "26fda3aa-519f-56b5-bbda-2667a2fe7055",
+      "name": "A cada 3 min (8h–17h, seg–sex)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/3 8-16 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8042b8c5-1158-5e87-8743-78ca11b35ccf",
+      "name": "Pegar envios aprovados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/envios/prontos?limite=10",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "09a8cba2-86d4-5b83-9fc0-1ba49151bb1b",
+      "name": "Um item por envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return ($input.first().json.envios || []).map(e => ({ json: e }));"
+      }
+    },
+    {
+      "id": "b38e82d6-62e8-507d-9527-2d563112552d",
+      "name": "Um de cada vez",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "04f69d14-deaa-57dc-b360-f44158fcdccb",
+      "name": "Montar e enviar (SMTP)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Monta o e-mail a partir do modelo HTML local e envia por SMTP (nodemailer, que já vem no n8n).\n// Por que Code e não o nó \"Send Email\": In-Reply-To/References precisam sair para R2/R3\n// ficarem na mesma conversa, e anexos variam por envio.\n// Segredos vêm do ambiente do container (nunca do canvas):\n//   CRM_SMTP = {\"ana@example.com\": {\"host\":\"...\",\"port\":587,\"secure\":false,\"user\":\"...\",\"pass\":\"...\"}}\n//   CRM_TEMPLATES_DIR (padrão /templates, montado pelo docker-compose)\nconst nodemailer = require('nodemailer');\nconst fs = require('fs');\nconst path = require('path');\nconst e = $json;\nconst smtp = JSON.parse($env.CRM_SMTP || '{}')[e.caixa];\nif (!smtp) return { json: { envio_id: e.id, ok: false, erro: `sem SMTP configurado para ${e.caixa}` } };\n\nconst pasta = $env.CRM_TEMPLATES_DIR || '/templates';\nconst modelo = fs.readFileSync(path.join(pasta, 'modelo_email.html'), 'utf8');\nconst html = modelo.replace(/<!--[\\s\\S]*?-->/, '').replace('{{CORPO}}', e.corpo_html);\n\nconst ARQUIVOS = { catalogo: 'catalogo.pdf', ficha_cadastral: 'ficha_cadastral.pdf' };\nconst anexos = [];\nfor (const a of e.anexos || []) {\n  const arq = ARQUIVOS[a] && path.join(pasta, 'anexos', ARQUIVOS[a]);\n  if (arq && fs.existsSync(arq)) anexos.push({ filename: ARQUIVOS[a], content: fs.readFileSync(arq) });\n}\n\ntry {\n  const t = nodemailer.createTransport({ host: smtp.host, port: smtp.port, secure: !!smtp.secure,\n                                         auth: { user: smtp.user, pass: smtp.pass } });\n  const info = await t.sendMail({\n    from: e.caixa, to: e.para, bcc: e.bcc || undefined, subject: e.assunto, html, attachments: anexos,\n    inReplyTo: e.in_reply_to || undefined, references: e.in_reply_to || undefined,\n  });\n  return { json: { envio_id: e.id, ok: true, message_id: info.messageId } };\n} catch (err) {\n  return { json: { envio_id: e.id, ok: false, erro: String(err.message || err).slice(0, 500) } };\n}"
+      }
+    },
+    {
+      "id": "f3c77333-d375-5e7f-ac56-a335f8cfa7c7",
+      "name": "Registrar resultado na API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/envios/{{ $json.envio_id }}/resultado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ok: $json.ok, message_id: $json.message_id, erro: $json.erro }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "8d9f6b75-f720-5e2b-a983-3fa01e8a735c",
+      "name": "Pausa de 20–40 s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        100
+      ],
+      "parameters": {
+        "amount": "={{ 20 + Math.floor(Math.random() * 21) }}",
+        "unit": "seconds"
+      }
+    }
+  ],
+  "connections": {
+    "A cada 3 min (8h–17h, seg–sex)": {
+      "main": [
+        [
+          {
+            "node": "Pegar envios aprovados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pegar envios aprovados": {
+      "main": [
+        [
+          {
+            "node": "Um item por envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um item por envio": {
+      "main": [
+        [
+          {
+            "node": "Um de cada vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um de cada vez": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Montar e enviar (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar e enviar (SMTP)": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado na API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado na API": {
+      "main": [
+        [
+          {
+            "node": "Pausa de 20–40 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa de 20–40 s": {
+      "main": [
+        [
+          {
+            "node": "Um de cada vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "descricao": ""
+  },
+  "tags": [
+    {
+      "name": "prospect-flow"
+    }
+  ]
+}

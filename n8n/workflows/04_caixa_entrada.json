@@ -1,0 +1,231 @@
+{
+  "name": "Prospect Flow · 04 · Caixa de entrada",
+  "nodes": [
+    {
+      "id": "5d6c259b-a726-5004-b7b9-44e102b349db",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -280
+      ],
+      "parameters": {
+        "content": "## Caixa de entrada\nLê só e-mails novos (não marca como lido, não move nada). Bounce e resposta automática NÃO passam pela classificação de interesse (não são resposta do lead). Toda mensagem de lead vira tarefa `tratar_resposta`; campainha que tocou vira tarefa urgente + aviso. Defina CRM_CAIXA_ATUAL no ambiente desta instância (ou duplique este workflow por caixa).",
+        "width": 520,
+        "height": 220
+      }
+    },
+    {
+      "id": "989aac42-637b-58c6-8dac-663061a79081",
+      "name": "Novo e-mail",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "nothing",
+        "format": "resolved",
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]"
+        }
+      },
+      "credentials": {
+        "imap": {
+          "id": "cred-imap-operador",
+          "name": "IMAP operador"
+        }
+      }
+    },
+    {
+      "id": "6cac8fe4-8c87-56ab-a124-1e139237cd7a",
+      "name": "Campainhas ativas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/campainhas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "id": "2fe64501-b0eb-5f5f-83be-648764630425",
+      "name": "Classificar (bounce, auto-reply, redirect, humano) e conferir campainhas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Classifica o e-mail recebido e confere as campainhas. Regras simples e\n// explicáveis; o que for resposta de gente vai para a classificação da API.\nconst campainhas = ($('Campainhas ativas').first().json.caixas || [])\n  .filter(c => c.caixa === $env.CRM_CAIXA_ATUAL).flatMap(c => c.campainhas);\nconst saida = [];\nfor (const item of $('Novo e-mail').all()) {\n  const m = item.json;\n  const h = m.headers || {};\n  const cab = (k) => String(h[k] || h[k.toLowerCase()] || '').toLowerCase();\n  const de = String(m.from?.value?.[0]?.address || m.from || '').toLowerCase();\n  const assunto = String(m.subject || '');\n  const texto = String(m.text || m.textPlain || '').slice(0, 4000);\n  const mid = m.messageId || m['message-id'] || cab('message-id');\n\n  let classe = 'humano', endereco_falhou = null, redirect_para = null;\n  if (/mailer-daemon|postmaster/.test(de) || /undeliverable|delivery status notification|não foi possível entregar|returned mail|falha na entrega/i.test(assunto)) {\n    classe = 'bounce';\n    const fr = texto.match(/final-recipient:.*?;\\s*([^\\s>]+@[^\\s>]+)/i) || texto.match(/([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})/i);\n    endereco_falhou = fr ? fr[1].toLowerCase() : null;\n  } else if (cab('auto-submitted').startsWith('auto') || cab('x-autoreply') || cab('x-autorespond') ||\n             /resposta automática|automatic reply|out of office|ausente|férias|ferias/i.test(assunto)) {\n    classe = 'auto_reply';\n    const dominio = de.split('@')[1];\n    const outros = (texto.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/gi) || [])\n      .map(x => x.toLowerCase()).filter(x => x !== de && x.endsWith('@' + dominio));\n    if (outros.length) { classe = 'redirect'; redirect_para = outros[0]; }\n  }\n\n  const inbound = { caixa: $env.CRM_CAIXA_ATUAL, message_id: mid, de, para: String(m.to?.text || m.to || ''),\n                    assunto, trecho: texto, classe, endereco_falhou, redirect_para,\n                    in_reply_to: m.inReplyTo || cab('in-reply-to') || null };\n  const tocou = campainhas.filter(c =>\n    (c.tipo === 'dominio' && (de.endsWith('@' + c.padrao) || de.endsWith('.' + c.padrao))) ||\n    (c.tipo === 'remetente' && de === c.padrao) ||\n    (c.tipo === 'assunto' && assunto.toLowerCase().includes(c.padrao)));\n  saida.push({ json: { inbound, disparos: tocou.map(c => ({ campainha_id: c.id, message_id: mid, de, assunto,\n                                                            trecho: texto.slice(0, 1500), recebido_em: m.date })) } });\n}\nreturn saida;"
+      }
+    },
+    {
+      "id": "32c28e5c-5693-589f-af2c-0b9308eede2a",
+      "name": "Entregar à API (/inbound)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/inbound",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.inbound) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "204c35ab-14d7-5df8-b2b1-e3be25fdaac5",
+      "name": "Um item por campainha que tocou",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().flatMap(i => (i.json.disparos || []).map(d => ({ json: d })));"
+      }
+    },
+    {
+      "id": "4879ad0d-b97a-5921-8b98-9e411e0395b1",
+      "name": "Tocar a campainha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/campainhas/{{ $json.campainha_id }}/disparo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, de: $json.de, assunto: $json.assunto, trecho: $json.trecho, recebido_em: $json.recebido_em }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Novo e-mail": {
+      "main": [
+        [
+          {
+            "node": "Campainhas ativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campainhas ativas": {
+      "main": [
+        [
+          {
+            "node": "Classificar (bounce, auto-reply, redirect, humano) e conferir campainhas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar (bounce, auto-reply, redirect, humano) e conferir campainhas": {
+      "main": [
+        [
+          {
+            "node": "Entregar à API (/inbound)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Um item por campainha que tocou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um item por campainha que tocou": {
+      "main": [
+        [
+          {
+            "node": "Tocar a campainha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "descricao": ""
+  },
+  "tags": [
+    {
+      "name": "prospect-flow"
+    }
+  ]
+}

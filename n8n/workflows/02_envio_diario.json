@@ -1,0 +1,137 @@
+{
+  "name": "Prospect Flow · 02 · Envio diário",
+  "nodes": [
+    {
+      "id": "1d4e194e-5134-524a-b9f2-7360d62f45ec",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "content": "## Envio diário\nA API filtra os candidatos que as regras de cada operador permitem tocar hoje (estágio, rodada, intervalo, teto) e entrega UMA tarefa ao bot. Quem tocar, o texto e o ângulo são decisão do bot, e ele pode recusar.",
+        "width": 420,
+        "height": 200
+      }
+    },
+    {
+      "id": "51559972-4693-5db1-b981-8629c63b7ab4",
+      "name": "09:00 seg–sex",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2efa3fa5-ade2-570d-a3f5-c240591a1a70",
+      "name": "Acordar a API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PF_API_URL }}/saude",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "e0c37314-893b-53c3-9d78-580a64df958c",
+      "name": "Montar a tarefa envio_diario de cada operador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PF_API_URL }}/orquestrador/envio-diario",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-api-orquestrador",
+          "name": "Prospect Flow orquestrador"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "09:00 seg–sex": {
+      "main": [
+        [
+          {
+            "node": "Acordar a API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acordar a API": {
+      "main": [
+        [
+          {
+            "node": "Montar a tarefa envio_diario de cada operador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "descricao": ""
+  },
+  "tags": [
+    {
+      "name": "prospect-flow"
+    }
+  ]
+}
