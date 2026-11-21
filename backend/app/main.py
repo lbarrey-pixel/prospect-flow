@@ -1,4 +1,4 @@
-"""API do Prospect Flow. Contrato em docs/api.md; desenho em docs/arquitetura.md."""
+"""Prospect Flow API. Contract in docs/api.md; design in docs/architecture.md."""
 
 from __future__ import annotations
 
