@@ -1,31 +1,31 @@
-# Prospect Flow: painel web
+# Prospect Flow: web panel
 
-React 18 + Vite 5, layout de quadro. Contrato da API em [`../docs/api.md`](../docs/api.md).
+React 18 + Vite 5, board layout. API contract in [`../docs/api.md`](../docs/api.md).
 
-## Modo demonstração
+## Demo mode
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Abra http://localhost:5173. Sem `VITE_API_URL` (ou com `VITE_MOCK=1`) o painel usa uma API fictícia em memória (`src/mock.js`): não pede login, as ações alteram o estado e recarregar a página volta ao início. Tarefas criadas pelo painel andam sozinhas (pendente, entregue, em andamento, executou) a cada ~15 s, para mostrar o polling.
+Open http://localhost:5173. Without `VITE_API_URL` (or with `VITE_MOCK=1`) the panel uses an in-memory fake API (`src/mock.js`): it does not ask for login, actions change the state, and reloading the page returns to the start. Tasks created by the panel advance on their own (pendente, entregue, em andamento, executou) every ~15 s, to show polling.
 
-## Contra a API
+## Against the API
 
-Crie `web/.env.local`:
+Create `web/.env.local`:
 
 ```
 VITE_API_URL=http://localhost:8000
-VITE_DEV_LOGIN=1                              # campo de e-mail; a API precisa de AUTH_DEV=1
-# VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com   # login por Google
+VITE_DEV_LOGIN=1                              # email field; the API needs AUTH_DEV=1
+# VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com   # Google login
 ```
 
-Quem pode entrar é decidido pela API (`GET /eu`, tabela `crm.operadores`).
+Who can sign in is decided by the API (`GET /eu`, table `crm.operadores`).
 
-## Organização
+## Organization
 
-- `src/api.js`: cliente da API, com desvio para o mock
-- `src/mock.js`: API fictícia, mesmas rotas e formatos
-- `src/views/`: uma tela por item da barra lateral
-- `src/components/`: grupo, gaveta, modal, pílulas, diff, linha do tempo
+- `src/api.js`: API client, diverting to the mock
+- `src/mock.js`: fake API, same routes and formats
+- `src/views/`: one screen per sidebar item
+- `src/components/`: group, drawer, modal, pills, diff, timeline
