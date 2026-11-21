@@ -1,56 +1,56 @@
-# API: contrato v1
+# API: contract v1
 
-Base local: `http://localhost:8000` (documentação interativa em `/docs`). JSON em tudo; datas em ISO-8601 com fuso.
-Autenticação: `Authorization: Bearer <token>`.
+Local base: `http://localhost:8000` (interactive documentation at `/docs`). JSON everywhere; dates in ISO-8601 with a timezone.
+Authentication: `Authorization: Bearer <token>`.
 
-- **Operador (painel)**: ID token do Google, com o e-mail cadastrado em `crm.operadores`. Admin edita tudo; os demais editam só o que é deles e veem tudo. Em desenvolvimento, com `AUTH_DEV=1`, o token `dev:<email>` entra como aquele operador.
-- **Chave `bot`** (`pf_…`): enxerga e mexe só no que é do próprio operador.
-- **Chave `orquestrador`** (n8n): rotas `/orquestrador/*`, todos os operadores.
-- **Chave `leitura`**: só leitura.
+- **Operator (panel)**: Google ID token, with the email registered in `crm.operadores`. An admin edits everything; the others edit only what is theirs and see everything. In development, with `AUTH_DEV=1`, the token `dev:<email>` signs in as that operator.
+- **`bot` key** (`pf_…`): sees and changes only what belongs to its own operator.
+- **`orquestrador` key** (n8n): routes `/orquestrador/*`, all operators.
+- **`leitura` key**: read-only.
 
-Gere chaves com `python -m scripts.gerar_chave` (a chave aparece uma vez; o banco guarda só o hash).
+Generate keys with `python -m scripts.gerar_chave` (the key is shown once; the database stores only the hash).
 
-Erros: `{"detail": "texto"}` com 400, 401, 403, 404, 409 ou 422. Erros internos devolvem mensagem genérica; o detalhe vai para o log.
+Errors: `{"detail": "texto"}` with 400, 401, 403, 404, 409, or 422. Internal errors return a generic message; the detail goes to the log.
 
-## Comuns
+## Common
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET /saude` | livre | `{ok, versao}` |
-| `GET /eu` | todos | `{email, nome, tipo, admin, operador}` |
-| `GET /operadores` | operador | lista com `regras`, `bcc`, `caixa` |
-| `PATCH /operadores/{email}` | dono ou admin | altera `regras`, `bcc`, `caixa` |
-| `GET /painel?operador=` | operador | contagens por estágio, tarefas abertas, relatos não lidos, envios do dia |
-| `GET /eventos?operador=&entidade=&limite=` | operador | feed de atividade |
+| `GET /saude` | public | `{ok, versao}` |
+| `GET /eu` | everyone | `{email, nome, tipo, admin, operador}` |
+| `GET /operadores` | operator | list with `regras`, `bcc`, `caixa` |
+| `PATCH /operadores/{email}` | owner or admin | changes `regras`, `bcc`, `caixa` |
+| `GET /painel?operador=` | operator | counts by stage, open tasks, unread reports, sends for the day |
+| `GET /eventos?operador=&entidade=&limite=` | operator | activity feed |
 
-## Tarefas
+## Tasks
 
 Status: `pendente`, `entregue`, `em_andamento`, `executou`, `parcial`, `adiou`, `recusou`, `bloqueado_humano`, `falhou`, `cancelada`.
-Tipo: `envio_diario`, `tratar_resposta`, `campainha`, `acompanhamento`, `resposta_operador`, `pergunta`.
+Type: `envio_diario`, `tratar_resposta`, `campainha`, `acompanhamento`, `resposta_operador`, `pergunta`.
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET /tarefas?operador=&status=&tipo=&dominio=&desde=&limite=` | operador | lista, mais recentes primeiro, com contagem por status |
-| `GET /tarefas/{id}` | operador | tarefa, linha do tempo e envios |
-| `POST /tarefas` | operador | cria tarefa manual `{operador, tipo, titulo, instrucao, dominio?, prioridade?}` |
-| `POST /tarefas/{id}/cancelar` | dono ou admin | `{motivo}` |
-| `POST /tarefas/{id}/reenviar` | dono ou admin | volta para `pendente` e tenta o webhook de novo |
+| `GET /tarefas?operador=&status=&tipo=&dominio=&desde=&limite=` | operator | list, newest first, with a count by status |
+| `GET /tarefas/{id}` | operator | task, timeline, and sends |
+| `POST /tarefas` | operator | creates a manual task `{operador, tipo, titulo, instrucao, dominio?, prioridade?}` |
+| `POST /tarefas/{id}/cancelar` | owner or admin | `{motivo}` |
+| `POST /tarefas/{id}/reenviar` | owner or admin | returns to `pendente` and tries the webhook again |
 
 ## Bot (`/bot/*`)
 
-| Rota | O quê |
+| Route | What |
 |---|---|
-| `GET /bot/tarefas` | a fila. Ao listar, `pendente` vira `entregue` |
+| `GET /bot/tarefas` | the queue. On listing, `pendente` becomes `entregue` |
 | `POST /bot/tarefas/{id}/iniciar` | `em_andamento` |
-| `POST /bot/tarefas/{id}/resultado` | devolve a decisão (abaixo) |
-| `GET /bot/diretrizes` | diretriz ativa do operador (ou a padrão) |
-| `POST /bot/diretrizes/propostas`, `GET /bot/diretrizes/propostas` | propõe mudança (fica `proposta` até aprovação) e consulta o andamento |
-| `GET/POST /bot/campainhas`, `PATCH/DELETE /bot/campainhas/{id}` | campainhas próprias (DELETE arquiva) |
-| `GET/POST /bot/acompanhamentos`, `PATCH/DELETE /bot/acompanhamentos/{id}` | idem |
-| `POST /bot/relatos`, `GET /bot/relatos?respondidos=1` | reporta ao operador e lê as respostas |
-| `PUT /bot/webhook` | `{url}`; o segredo HMAC é gerado e devolvido uma vez |
+| `POST /bot/tarefas/{id}/resultado` | returns the decision (below) |
+| `GET /bot/diretrizes` | the operator's active guideline (or the default) |
+| `POST /bot/diretrizes/propostas`, `GET /bot/diretrizes/propostas` | proposes a change (stays `proposta` until approval) and checks progress |
+| `GET/POST /bot/campainhas`, `PATCH/DELETE /bot/campainhas/{id}` | own bells (DELETE archives) |
+| `GET/POST /bot/acompanhamentos`, `PATCH/DELETE /bot/acompanhamentos/{id}` | same |
+| `POST /bot/relatos`, `GET /bot/relatos?respondidos=1` | reports to the operator and reads the replies |
+| `PUT /bot/webhook` | `{url}`; the HMAC secret is generated and returned once |
 
-Resultado da tarefa:
+Task result:
 
 ```json
 { "status": "executou|parcial|adiou|recusou|bloqueado_humano",
@@ -63,67 +63,67 @@ Resultado da tarefa:
       "proxima_acao_em": "2026-10-09T09:00:00-03:00" } ] }
 ```
 
-`adiou` exige `reagendar_em`; `recusou`, `bloqueado_humano` e `parcial` exigem `motivo`. Cada `rascunho` vira um `envio`. A resposta traz `envios: [{id, dominio, status, motivo_bloqueio}]`, e o bot sabe na hora se algum foi barrado.
+`adiou` requires `reagendar_em`; `recusou`, `bloqueado_humano`, and `parcial` require `motivo`. Each `rascunho` becomes an `envio`. The response includes `envios: [{id, dominio, status, motivo_bloqueio}]`, and the bot knows immediately whether any was blocked.
 
-Webhook para o bot: `POST <webhook_url>` com `X-ProspectFlow-Evento: tarefa.nova`, `X-ProspectFlow-Assinatura: sha256=<hmac do corpo>` e corpo `{evento, tarefa}`. 2xx marca a tarefa como `entregue`; falha deixa `pendente` e o tick tenta de novo.
+Webhook to the bot: `POST <webhook_url>` with `X-ProspectFlow-Evento: tarefa.nova`, `X-ProspectFlow-Assinatura: sha256=<hmac of the body>` and body `{evento, tarefa}`. 2xx marks the task as `entregue`; failure leaves it `pendente` and the tick tries again.
 
-## Envios
+## Sends
 
 Status: `aprovado`, `agendado`, `bloqueado`, `enviando`, `enviado`, `falhou`, `cancelado`.
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET /envios?operador=&status=&desde=` | operador | lista |
-| `POST /envios/{id}/liberar` | dono ou admin | libera um bloqueado (exceção humana, registrada) |
-| `POST /envios/{id}/cancelar` | dono ou admin | |
+| `GET /envios?operador=&status=&desde=` | operator | list |
+| `POST /envios/{id}/liberar` | owner or admin | releases a blocked one (human exception, recorded) |
+| `POST /envios/{id}/cancelar` | owner or admin | |
 
-## Campainhas, acompanhamentos e relatos
+## Bells, follow-ups, and reports
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET/POST /campainhas`, `PATCH/DELETE /campainhas/{id}`, `GET /campainhas/{id}/disparos` | operador | campainha: `tipo` `dominio`, `remetente` ou `assunto`, com `padrao` e `prioridade` |
-| `GET/POST /acompanhamentos`, `PATCH/DELETE /acompanhamentos/{id}` | operador | lembrete agendado que vira tarefa |
-| `GET /relatos?operador=&nao_lidos=1` | operador | caixa de entrada do operador |
-| `POST /relatos/{id}/lido`, `POST /relatos/{id}/responder` | dono ou admin | responder cria tarefa `resposta_operador` para o bot |
+| `GET/POST /campainhas`, `PATCH/DELETE /campainhas/{id}`, `GET /campainhas/{id}/disparos` | operator | bell: `tipo` `dominio`, `remetente`, or `assunto`, with `padrao` and `prioridade` |
+| `GET/POST /acompanhamentos`, `PATCH/DELETE /acompanhamentos/{id}` | operator | scheduled reminder that becomes a task |
+| `GET /relatos?operador=&nao_lidos=1` | operator | the operator's inbox |
+| `POST /relatos/{id}/lido`, `POST /relatos/{id}/responder` | owner or admin | replying creates a `resposta_operador` task for the bot |
 
-## Diretrizes
+## Guidelines
 
 Status: `ativa`, `proposta`, `rejeitada`, `substituida`.
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET /diretrizes?operador=`, `GET /diretrizes/{id}` | operador | versões; o painel monta o diff com `base_versao` |
-| `POST /diretrizes` | dono ou admin | publica versão nova (já `ativa`) |
-| `POST /diretrizes/{id}/aprovar` | dono ou admin | vira `ativa`, a anterior fica `substituida`, as `regras` vão para `operadores.regras` |
-| `POST /diretrizes/{id}/rejeitar` | dono ou admin | `{nota}`; o bot lê o motivo |
+| `GET /diretrizes?operador=`, `GET /diretrizes/{id}` | operator | versions; the panel builds the diff with `base_versao` |
+| `POST /diretrizes` | owner or admin | publishes a new version (already `ativa`) |
+| `POST /diretrizes/{id}/aprovar` | owner or admin | becomes `ativa`, the previous one becomes `substituida`, and the `regras` go to `operadores.regras` |
+| `POST /diretrizes/{id}/rejeitar` | owner or admin | `{nota}`; the bot reads the reason |
 
 ## Leads
 
-| Rota | Quem | O quê |
+| Route | Who | What |
 |---|---|---|
-| `GET /leads?operador=&estagio=&teve_resposta=&busca=&ordenar=&limite=&offset=` | operador; bot (só os dele) | lista |
-| `GET /leads/{dominio}` | idem | lead, contatos, interações, ações e tarefas |
-| `POST /leads/{dominio}/contato` | dono; bot dono; orquestrador | registra contato; `recebido` classifica o interesse |
-| `POST /leads/{dominio}/estagio` | dono ou admin; bot só `frio`, `aquecendo`, `respondeu`, `descartado` | muda o estágio |
-| `GET/POST /leads/{dominio}/acoes` | dono; bot dono | histórico de toques |
+| `GET /leads?operador=&estagio=&teve_resposta=&busca=&ordenar=&limite=&offset=` | operator; bot (only its own) | list |
+| `GET /leads/{dominio}` | same | lead, contacts, interactions, actions, and tasks |
+| `POST /leads/{dominio}/contato` | owner; owning bot; orchestrator | records a contact; `recebido` classifies the interest |
+| `POST /leads/{dominio}/estagio` | owner or admin; bot only `frio`, `aquecendo`, `respondeu`, `descartado` | changes the stage |
+| `GET/POST /leads/{dominio}/acoes` | owner; owning bot | history of touches |
 
-## Diário e board
+## Diary and board
 
-| Rota | O quê |
+| Route | What |
 |---|---|
-| `GET /diario?dia=AAAA-MM-DD&operador=` | linha do tempo do dia com resumo e itens (e-mail enviado, resposta, bounce, decisão, tarefa…) |
-| `GET /diario/dias?dias=30&operador=` | contagem por dia para o calendário |
-| `GET /board?dias=30&operador=` | funil, taxas de resposta e bounce, série diária e quentes do período |
+| `GET /diario?dia=AAAA-MM-DD&operador=` | the day's timeline with a summary and items (email sent, reply, bounce, decision, task…) |
+| `GET /diario/dias?dias=30&operador=` | count per day for the calendar |
+| `GET /board?dias=30&operador=` | funnel, reply and bounce rates, daily series, and hot leads for the period |
 
-## Orquestrador (`/orquestrador/*`)
+## Orchestrator (`/orquestrador/*`)
 
-| Rota | O quê |
+| Route | What |
 |---|---|
-| `POST /orquestrador/tick` | reabre adiadas, dispara acompanhamentos vencidos, repete webhooks, libera agendados. Cada passo é idempotente |
-| `POST /orquestrador/envio-diario` | monta a tarefa `envio_diario` de cada operador com bot ativo. Chave de deduplicação por operador e dia |
-| `GET /orquestrador/envios/prontos` | pega envios `aprovado` e marca `enviando` (`FOR UPDATE SKIP LOCKED`) |
-| `POST /orquestrador/envios/{id}/resultado` | `{ok, message_id?, erro?}`: `enviado` (grava a ação) ou `falhou`. Idempotente |
-| `GET /orquestrador/campainhas` | campainhas ativas, agrupadas por caixa |
-| `POST /orquestrador/campainhas/{id}/disparo` | registra o disparo, cria tarefa urgente e relato, sem duplicar por `message_id` |
-| `POST /orquestrador/inbound` | `{caixa, message_id, de, para, assunto, trecho, classe, redirect_para?, endereco_falhou?, in_reply_to?}`; acha o lead, registra e cria `tratar_resposta`. Duplicado por `message_id` devolve `duplicado: true` |
-| `GET /orquestrador/avisos` | o que avisar ao operador agora; marca como avisado |
+| `POST /orquestrador/tick` | reopens postponed tasks, fires overdue follow-ups, retries webhooks, releases scheduled sends. Each step is idempotent |
+| `POST /orquestrador/envio-diario` | builds the `envio_diario` task of each operator with an active bot. Deduplication key per operator and day |
+| `GET /orquestrador/envios/prontos` | takes `aprovado` sends and marks them `enviando` (`FOR UPDATE SKIP LOCKED`) |
+| `POST /orquestrador/envios/{id}/resultado` | `{ok, message_id?, erro?}`: `enviado` (records the action) or `falhou`. Idempotent |
+| `GET /orquestrador/campainhas` | active bells, grouped by mailbox |
+| `POST /orquestrador/campainhas/{id}/disparo` | records the firing, creates an urgent task and a report, without duplicating on `message_id` |
+| `POST /orquestrador/inbound` | `{caixa, message_id, de, para, assunto, trecho, classe, redirect_para?, endereco_falhou?, in_reply_to?}`; finds the lead, records it, and creates `tratar_resposta`. A duplicate by `message_id` returns `duplicado: true` |
+| `GET /orquestrador/avisos` | what to notify the operator about now; marks it as notified |
